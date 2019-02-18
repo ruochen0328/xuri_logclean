@@ -1,6 +1,7 @@
 import java.time.{LocalDateTime, ZoneId}
 import java.util.{Calendar, Properties}
 
+import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.commons.lang3.StringUtils
 import org.apache.commons.lang3.time.FastDateFormat
 import org.apache.spark.sql._
@@ -11,7 +12,7 @@ object FuncstatETL {
       val sparksession = SparkSession.builder().master("local[*]").appName("FuncstatETL").getOrCreate()
       val rawlogs: Dataset[String] = sparksession.read.textFile("/Users/yangwensheng/IdeaProjects/xuri_logclean/log")
       import sparksession.implicits._
-    val cleanedlogs = rawlogs
+      val cleanedlogs = rawlogs
       .filter(_.contains("[end request:]"))
       .map(line => {
         val dateFormat = FastDateFormat.getInstance("yyyy-MM-dd HH:mm:ss.SSS")
@@ -42,15 +43,28 @@ object FuncstatETL {
         val param = ""
         val bpm = extractContentByKey(extractContentInBracket(items(10)), "bpm=")
         val date = extractContentInBracket(items(1)).substring(0, 10)
-        timestamp+"#"+ hour+"#"+ min+"#"+ sec+"#"+ ms+"#"+ sessionid+"#"+ servername+"#"+ funcurl+"#"+ opid+"#"+ optype+"#"+ userip+"#"+ accountid+"#"+ agent+"#"+ requestquerystring+"#"+ referer+"#"+ delay+"#"+ anchor+"#"+ ref+"#"+ requestId+"#"+ param+"#"+ bpm+"#"+ date
-        opid+"#"+optype
-        //Funcstat(timestamp, hour, min, sec, ms, sessionid, servername, funcurl, opid, optype, userip, accountid, agent, requestquerystring, referer, delay, anchor, ref, requestId, param, bpm, date)
+//        timestamp+"#"+ hour+"#"+ min+"#"+ sec+"#"+ ms+"#"+ sessionid+"#"+ servername+"#"+ funcurl+"#"+ opid+"#"+ optype+"#"+ userip+"#"+ accountid+"#"+ agent+"#"+ requestquerystring+"#"+ referer+"#"+ delay+"#"+ anchor+"#"+ ref+"#"+ requestId+"#"+ param+"#"+ bpm+"#"+ date
+//        opid+"#"+optype
+        (timestamp, hour, min, sec, ms, sessionid, servername, funcurl, opid, optype, userip, accountid, agent, requestquerystring, referer, delay, anchor, ref, requestId, param, bpm, date)
       })
-      val props=new Properties()
-      props.put("user","root")
-      props.put("password","yang0328")
-      cleanedlogs.write.mode(SaveMode.Overwrite).text("/Users/yangwensheng/IdeaProjects/xuri_logclean/result")
-      //cleanedlogs.write.mode(SaveMode.Overwrite).jdbc("jdbc:mysql://mini01:3306/bigdata","logs1",props)
+      val df: DataFrame = cleanedlogs.toDF()
+    df.createTempView("funcstat")
+    df.printSchema()
+    val sql:String=
+      s"""
+        select * from funcstat
+      """
+    sparksession.sql("")
+      val config: Config = ConfigFactory.load()
+      val properties = new Properties()
+      properties.setProperty("user",config.getString("db.default.user"))
+      properties.setProperty("password",config.getString("db.default.password"))
+      val dburl=config.getString("db.default.url")
+      val dbtable=config.getString("db.default.table")
+//      cleanedlogs.write.mode(SaveMode.Overwrite).text("/Users/yangwensheng/IdeaProjects/xuri_logclean/result")
+      cleanedlogs.write.mode(SaveMode.Overwrite).jdbc(dburl,dbtable,properties)
+
+    sparksession.stop()
   }
   def extractContentInBracket(rawContent:String):String={
     if(StringUtils.isNotBlank(rawContent)){
